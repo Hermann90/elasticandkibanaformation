@@ -24,7 +24,7 @@ docker compose up setup
 ```
 
 ```sh
-docker compose up
+docker compose up -d
 ```
 
 **Tout effacer**
