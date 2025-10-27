@@ -1,0 +1,120 @@
+services:
+# The web application to test
+  web:
+    image: kennethreitz/httpbin
+    container_name: httpbin
+    # Correction: Use a more standard host port, e.g., 80 or 8080.
+    # The internal port for httpbin is 80.
+    ports:
+      - "8080:80"
+
+  # Load testing tool with a Web UI (Locust)
+  locust:
+    image: locustio/locust:latest
+    container_name: locust
+    # Correction: Locust's web UI runs on 8089
+    ports:
+      - "8089:8089"
+    volumes:
+      - ./locust:/mnt/locust
+    # Correction: Ensure the command uses the correct service name and script path
+    command: -f /mnt/locust/locustfile.py --host=http://web
+    # Added: Dependencies and network
+    depends_on:
+      - web
+
+  # Générateur de logs factices
+  # https://github.com/mingrammer/flog
+  flog:
+    image: smf/flog
+    container_name: flog
+    build: 
+      context: ./.docker/flog
+    # Cette commande génère des logs en format JSON et les envoie à Logstash toutes les secondes.
+    # -l : boucle infinie
+    # -n 10 : nombre de logs à générer à chaque intervalle
+    # --sleep 1000ms : intervalle entre chaque génération de logs
+    # -nc logstash 5000 : envoie les logs à Logstash sur le port 5000
+    command: 
+        -c 
+        - "while true; do flog -f json -n 10 --sleep 0ms | nc logstash 5000; sleep 3; done"
+        
+  filebeat:
+    image: docker.elastic.co/beats/filebeat:${STACK_VERSION}
+    user: root
+    container_name: filebeat
+    depends_on:
+      - logstash
+    volumes:
+      - certs:/usr/share/filebeat/certs:ro
+      - ./filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      - ELASTIC_PASSWORD=${ELASTIC_PASSWORD}
+    command: ["--strict.perms=false"]
+    
+  logstash:
+    image: docker.elastic.co/logstash/logstash:${STACK_VERSION}
+    volumes:
+      - ./logstash/pipeline:/usr/share/logstash/pipeline
+      - certs:/usr/share/logstash/config/certs
+    environment:
+      - ELASTIC_PASSWORD=${ELASTIC_PASSWORD}
+      - XPACK_MONITORING_ENABLED=false
+    depends_on:
+      - es01
+
+  adminer:
+    image: adminer:latest
+    container_name: adminer
+    restart: unless-stopped
+    depends_on:
+      - db
+    ports:
+      - "8090:8080"
+    environment:
+      ADMINER_DEFAULT_SERVER: db
+      ADMINER_DESIGN: pepa-linha
+
+
+
+  db:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: odoo
+      POSTGRES_PASSWORD: odoo
+      POSTGRES_DB: postgres
+      TZ: Europe/Paris
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U odoo"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  odoo:
+    image: odoo:19
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8069:8069"
+    environment:
+      TZ: Europe/Paris
+      HOST: db
+      PORT: 5432
+      USER: odoo
+      PASSWORD: odoo
+      
+    command: "odoo"
+    volumes:
+      - odoo_data:/var/lib/odoo
+      # Montez vos modules custom ici si besoin :
+      # - ./addons:/mnt/extra-addons:rw
+
+volumes:
+  pg_data:
+  odoo_data:

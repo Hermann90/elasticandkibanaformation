@@ -1,0 +1,47 @@
+1. dézipper le fichier dans le répertoire de votre projet pour avoir le sous-répertoire ".docker"
+
+
+Pour avoir cette structure
+
+├───.docker
+│   └───flog
+├───data
+├───filebeat
+├───locust
+├───logstash
+│   └───pipeline
+
+
+
+
+2. Modifier le fichier : docker-compose.override.yml
+Remplacer les lignes 
+
+  flog:
+    image: mingrammer/flog
+    container_name: flog
+    command: -f json -l -n 10 --sleep 3000ms | nc logstash 5000
+
+par :
+
+
+
+  # Générateur de logs factices
+  # https://github.com/mingrammer/flog
+  flog:
+    image: smf/flog
+    container_name: flog
+    build: 
+      context: ./.docker/flog
+    # Cette commande génère des logs en format JSON et les envoie à Logstash toutes les secondes.
+    # -l : boucle infinie
+    # -n 10 : nombre de logs à générer à chaque intervalle
+    # --sleep 1000ms : intervalle entre chaque génération de logs
+    # -nc logstash 5000 : envoie les logs à Logstash sur le port 5000
+    command: 
+        -c 
+        - "while true; do flog -f json -n 10 --sleep 0ms | nc logstash 5000; sleep 3; done"
+
+
+
+3. lancer dans la console : docker compose up -d
